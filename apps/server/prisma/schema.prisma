@@ -1,0 +1,496 @@
+// ═══════════════════════════════════════════════════════════════════════════
+//  O banco de dados da rede
+// ═══════════════════════════════════════════════════════════════════════════
+//
+//  Um princípio guia tudo aqui: **o servidor guarda muita coisa e entende
+//  pouca**. Mensagens, áudios e fotos chegam já cifrados e são gravados como
+//  bytes opacos. Não existe nenhuma coluna com o texto de uma conversa, nem
+//  uma chave capaz de abri-la.
+//
+//  Isso tem um preço, e ele aparece no formato das tabelas: não dá para fazer
+//  busca por conteúdo, não dá para gerar prévia em notificação, e migração de
+//  dados nunca pode "reprocessar" mensagem. Em troca, um vazamento do banco
+//  entrega ruído.
+//
+//  Depois de mudar este arquivo:  pnpm db:migrate
+// ═══════════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Pessoas e acesso ──────────────────────────────────────────────────────
+
+enum Papel {
+  ADMIN
+  MEMBRO
+}
+
+model Usuario {
+  id      String @id @default(cuid())
+  email   String @unique
+  apelido String @unique
+  nome    String
+  avatar  String?
+
+  /// Argon2id. Nunca a senha, nunca algo reversível.
+  senhaHash String
+  papel     Papel  @default(MEMBRO)
+
+  /// Chave pública mestre, derivada da frase de recuperação de 24 palavras.
+  /// É para ela que as chaves de conversa também são seladas, para que um
+  /// aparelho novo consiga reabrir o histórico. A parte privada só existe na
+  /// cabeça (ou no papel) do dono.
+  chaveDeRecuperacao String?
+
+  criadoEm     DateTime  @default(now())
+  vistoPorUltimoEm DateTime?
+  desativadoEm DateTime?
+
+  aparelhos       Aparelho[]
+  sessoes         Sessao[]
+  convitesCriados Convite[]           @relation("ConvitesCriados")
+  conviteUsado    Convite?            @relation("ConviteUsado", fields: [conviteUsadoId], references: [id])
+  conviteUsadoId  String?
+  circulos        MembroDoCirculo[]
+  posts           Post[]
+  comentarios     Comentario[]
+  reacoes         Reacao[]
+  midias          Midia[]
+  conversas       MembroDaConversa[]
+  mensagens       Mensagem[]
+  recibos         Recibo[]
+  chamadas        Chamada[]
+  registros       Registro[]
+
+  @@index([desativadoEm])
+}
+
+/// Um celular ou navegador específico.
+///
+/// Cada um tem suas próprias chaves. É o que permite dizer "some o acesso
+/// daquele tablet que eu perdi" sem derrubar os outros aparelhos.
+model Aparelho {
+  id       String  @id @default(cuid())
+  usuario  Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  usuarioId String
+  nome     String
+
+  /// Ed25519 — prova quem escreveu.
+  chavePublicaDeAssinatura String
+  /// X25519 — recebe segredos selados.
+  chavePublicaDeTroca      String
+
+  /// A identidade do aparelho, cifrada com a senha do dono. O servidor guarda
+  /// para permitir entrar de um navegador novo, mas não consegue abrir.
+  cofreCifrado Json?
+
+  criadoEm     DateTime  @default(now())
+  usadoEm      DateTime?
+  revogadoEm   DateTime?
+  /// Preenchido quando o próprio dono revoga, para ele lembrar por quê.
+  motivoRevogacao String?
+
+  sessoes      Sessao[]
+  chavesDeConversa ChaveDeConversa[]
+
+  @@index([usuarioId, revogadoEm])
+}
+
+/// Um login ativo. Guardamos o hash do token de renovação, nunca ele mesmo —
+/// pelo mesmo motivo de não guardar senha em claro.
+model Sessao {
+  id        String   @id @default(cuid())
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  usuarioId String
+  aparelho  Aparelho? @relation(fields: [aparelhoId], references: [id], onDelete: SetNull)
+  aparelhoId String?
+
+  tokenHash String   @unique
+  expiraEm  DateTime
+  criadoEm  DateTime @default(now())
+  revogadoEm DateTime?
+
+  /// Só para a pessoa reconhecer a sessão na lista ("Chrome no Windows").
+  descricao String?
+
+  @@index([usuarioId, revogadoEm])
+  @@index([expiraEm])
+}
+
+/// Sem um destes, ninguém entra. É o que mantém a rede fechada.
+model Convite {
+  id        String   @id @default(cuid())
+  codigo    String   @unique
+  criadoPor Usuario  @relation("ConvitesCriados", fields: [criadoPorId], references: [id])
+  criadoPorId String
+
+  usosRestantes Int      @default(1)
+  expiraEm      DateTime
+  criadoEm      DateTime @default(now())
+  revogadoEm    DateTime?
+  observacao    String?
+
+  usadoPor Usuario[] @relation("ConviteUsado")
+
+  @@index([expiraEm])
+}
+
+// ─── Círculos: quem vê o quê ───────────────────────────────────────────────
+
+/// "Casal", "Família", "Amigos". Um post pode ser dirigido a um deles.
+model Circulo {
+  id       String @id @default(cuid())
+  nome     String @unique
+  cor      String @default("#7c8cff")
+  criadoEm DateTime @default(now())
+
+  membros MembroDoCirculo[]
+  posts   Post[]
+}
+
+model MembroDoCirculo {
+  circulo   Circulo @relation(fields: [circuloId], references: [id], onDelete: Cascade)
+  circuloId String
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  usuarioId String
+  entrouEm  DateTime @default(now())
+
+  @@id([circuloId, usuarioId])
+  @@index([usuarioId])
+}
+
+// ─── Feed ──────────────────────────────────────────────────────────────────
+
+enum Visibilidade {
+  SO_EU
+  CASAL
+  CIRCULO
+  TODOS
+}
+
+/// Posts do feed.
+///
+/// Ao contrário do chat, o corpo do post fica **legível para o servidor**. Isso
+/// é uma escolha consciente, não um esquecimento: um post dirigido a um círculo
+/// teria de ser recifrado para cada pessoa a cada entrada e saída, o que é
+/// frágil e caro. A proteção aqui é controle de acesso rígido, mais cifragem
+/// em repouso nas mídias.
+///
+/// Quem quiser sigilo de verdade usa o chat, que é ponta-a-ponta.
+model Post {
+  id       String @id @default(cuid())
+  autor    Usuario @relation(fields: [autorId], references: [id], onDelete: Cascade)
+  autorId  String
+  corpo    String  @db.Text
+
+  visibilidade Visibilidade @default(TODOS)
+  circulo      Circulo?     @relation(fields: [circuloId], references: [id], onDelete: SetNull)
+  circuloId    String?
+
+  criadoEm  DateTime  @default(now())
+  editadoEm DateTime?
+  /// Stories: some sozinho quando chega a hora.
+  expiraEm  DateTime?
+
+  midias      Midia[]
+  comentarios Comentario[]
+  reacoes     Reacao[]
+
+  @@index([criadoEm])
+  @@index([expiraEm])
+  @@index([autorId, criadoEm])
+}
+
+model Comentario {
+  id      String @id @default(cuid())
+  post    Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId  String
+  autor   Usuario @relation(fields: [autorId], references: [id], onDelete: Cascade)
+  autorId String
+  corpo   String  @db.Text
+  criadoEm DateTime @default(now())
+
+  @@index([postId, criadoEm])
+}
+
+model Reacao {
+  post     Post    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId   String
+  usuario  Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  usuarioId String
+  emoji    String
+  criadoEm DateTime @default(now())
+
+  /// Uma reação por pessoa por post — trocar de emoji substitui a anterior.
+  @@id([postId, usuarioId])
+  @@index([postId])
+}
+
+// ─── Mídia ─────────────────────────────────────────────────────────────────
+
+enum TipoDeMidia {
+  IMAGEM
+  VIDEO
+  AUDIO
+  ARQUIVO
+}
+
+/// Um arquivo enviado. Os bytes ficam fora do banco, no armazenamento.
+///
+/// Duas formas de proteção, conforme a origem:
+///
+/// - **do chat**: cifrado no aparelho, com a chave viajando dentro da mensagem
+///   cifrada. O servidor nunca vê a chave. `nonce` fica nulo aqui.
+/// - **do feed**: cifrado pelo servidor em repouso, com chave derivada do
+///   MEDIA_ENCRYPTION_KEY. Protege contra roubo do disco, não contra o servidor.
+model Midia {
+  id      String @id @default(cuid())
+  dono    Usuario @relation(fields: [donoId], references: [id], onDelete: Cascade)
+  donoId  String
+  tipo    TipoDeMidia
+
+  /// Caminho dentro do armazenamento. Nunca exposto direto: o acesso sai por
+  /// URL assinada de curta duração.
+  chaveDeArmazenamento String @unique
+  mimeType  String
+  tamanhoEmBytes Int
+
+  /// Só para mídia do feed, cifrada pelo servidor.
+  nonce String?
+
+  /// Dimensões e duração, para a interface reservar o espaço certo antes de
+  /// carregar — evita a tela pulando.
+  largura     Int?
+  altura      Int?
+  duracaoEmMs Int?
+
+  /// Amostras da forma de onda de um áudio, para desenhar as barrinhas sem
+  /// precisar baixar e decodificar o arquivo inteiro.
+  ondaSonora Int[]
+
+  post     Post?   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId   String?
+  mensagem Mensagem?
+
+  criadoEm DateTime  @default(now())
+  /// Acompanha a expiração da mensagem ou do post a que pertence.
+  expiraEm DateTime?
+
+  @@index([postId])
+  @@index([expiraEm])
+}
+
+// ─── Conversas: aqui é ponta-a-ponta ───────────────────────────────────────
+
+enum TipoDeConversa {
+  DIRETA
+  GRUPO
+}
+
+enum ModoDeExpiracao {
+  APOS_ENVIO
+  APOS_LEITURA
+}
+
+model Conversa {
+  id    String         @id @default(cuid())
+  tipo  TipoDeConversa
+  /// Só para grupos. Conversa direta mostra o nome da outra pessoa.
+  titulo String?
+  avatar String?
+
+  /// Sobe a cada entrada, saída ou revogação de aparelho. Mensagens ficam
+  /// presas à época em que nasceram.
+  epocaAtual Int @default(1)
+
+  /// Prazo padrão das mensagens desta conversa, em segundos. Nulo = não somem.
+  expiraEmSegundos Int?
+  modoDeExpiracao  ModoDeExpiracao @default(APOS_LEITURA)
+
+  criadoEm     DateTime @default(now())
+  ultimaAtividadeEm DateTime @default(now())
+
+  membros   MembroDaConversa[]
+  mensagens Mensagem[]
+  chaves    ChaveDeConversa[]
+  chamadas  Chamada[]
+
+  @@index([ultimaAtividadeEm])
+}
+
+model MembroDaConversa {
+  conversa   Conversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  conversaId String
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  usuarioId  String
+
+  admin     Boolean   @default(false)
+  entrouEm  DateTime  @default(now())
+  saiuEm    DateTime?
+  leuAte    DateTime?
+  silenciadoAte DateTime?
+
+  @@id([conversaId, usuarioId])
+  @@index([usuarioId, saiuEm])
+}
+
+/// A chave de uma conversa, numa época, selada para um aparelho.
+///
+/// É o coração do desenho: o servidor guarda estes envelopes e não consegue
+/// abrir nenhum. Um envelope por aparelho por época.
+///
+/// Quando `aparelhoId` é nulo, o envelope foi selado para a **chave mestre de
+/// recuperação** do usuário — é o que permite a um celular novo, com a frase de
+/// 24 palavras, reabrir o histórico.
+model ChaveDeConversa {
+  id         String   @id @default(cuid())
+  conversa   Conversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  conversaId String
+  aparelho   Aparelho? @relation(fields: [aparelhoId], references: [id], onDelete: Cascade)
+  aparelhoId String?
+  /// Preenchido quando o envelope é o de recuperação (aparelhoId nulo).
+  usuarioIdDeRecuperacao String?
+
+  epoca  Int
+  /// Bytes opacos. Só a chave privada do destinatário abre.
+  selada String
+
+  criadoEm DateTime @default(now())
+
+  @@unique([conversaId, aparelhoId, epoca])
+  @@index([conversaId, epoca])
+  @@index([usuarioIdDeRecuperacao])
+}
+
+enum TipoDeMensagem {
+  TEXTO
+  AUDIO
+  IMAGEM
+  VIDEO
+  ARQUIVO
+  SISTEMA
+}
+
+/// Uma mensagem.
+///
+/// Repare no que **não** existe aqui: nenhuma coluna com o texto. Só
+/// `cifrado` e `nonce`, que sem a chave da época não dizem nada. Os campos em
+/// claro são apenas os que o servidor precisa para entregar e para apagar na
+/// hora certa.
+model Mensagem {
+  id         String   @id @default(cuid())
+  conversa   Conversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  conversaId String
+  remetente  Usuario  @relation(fields: [remetenteId], references: [id], onDelete: Cascade)
+  remetenteId String
+
+  tipo  TipoDeMensagem @default(TEXTO)
+  epoca Int
+
+  /// O conteúdo, cifrado no aparelho de quem enviou.
+  cifrado String @db.Text
+  nonce   String
+
+  midia   Midia?  @relation(fields: [midiaId], references: [id], onDelete: SetNull)
+  midiaId String? @unique
+
+  criadoEm DateTime @default(now())
+  editadoEm DateTime?
+
+  /// Quando esta mensagem deve sumir. Nulo = fica.
+  ///
+  /// No modo APOS_LEITURA fica nulo até a primeira leitura, e só então é
+  /// calculado — por isso a coluna é preenchida depois, não no envio.
+  expiraEm DateTime?
+  expiraEmSegundos Int?
+  modoDeExpiracao  ModoDeExpiracao?
+
+  /// Mídia que some assim que for aberta uma vez.
+  verUmaVez Boolean @default(false)
+
+  /// Marcada quando a faxina já apagou o conteúdo, mas o lugar dela na conversa
+  /// ainda é mostrado como "esta mensagem expirou".
+  apagadaEm DateTime?
+
+  recibos Recibo[]
+
+  @@index([conversaId, criadoEm])
+  @@index([expiraEm])
+}
+
+model Recibo {
+  mensagem   Mensagem @relation(fields: [mensagemId], references: [id], onDelete: Cascade)
+  mensagemId String
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  usuarioId  String
+
+  entregueEm DateTime?
+  lidoEm     DateTime?
+
+  @@id([mensagemId, usuarioId])
+  @@index([usuarioId])
+}
+
+// ─── Chamadas ──────────────────────────────────────────────────────────────
+
+enum TipoDeChamada {
+  VOZ
+  VIDEO
+}
+
+enum StatusDaChamada {
+  TOCANDO
+  EM_ANDAMENTO
+  ENCERRADA
+  RECUSADA
+  PERDIDA
+  FALHOU
+}
+
+/// O registro de uma chamada — quem ligou, quando, por quanto tempo.
+///
+/// O áudio e o vídeo não passam por aqui: vão direto entre os aparelhos, pelo
+/// WebRTC, já cifrados por DTLS-SRTP. Quando a conexão direta não rola, o TURN
+/// repassa os pacotes sem conseguir abri-los.
+model Chamada {
+  id         String   @id @default(cuid())
+  conversa   Conversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  conversaId String
+  iniciadaPor Usuario @relation(fields: [iniciadaPorId], references: [id], onDelete: Cascade)
+  iniciadaPorId String
+
+  tipo   TipoDeChamada
+  status StatusDaChamada @default(TOCANDO)
+
+  criadaEm    DateTime  @default(now())
+  atendidaEm  DateTime?
+  encerradaEm DateTime?
+
+  @@index([conversaId, criadaEm])
+}
+
+// ─── Trilha de auditoria ───────────────────────────────────────────────────
+
+/// O que aconteceu de importante na rede.
+///
+/// Serve para você responder "quem entrou ontem à noite?" e "quando revoguei
+/// aquele aparelho?". Guarda o **fato**, nunca o conteúdo.
+model Registro {
+  id       String  @id @default(cuid())
+  usuario  Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+  usuarioId String?
+
+  acao     String
+  detalhe  Json?
+  endereco String?
+  criadoEm DateTime @default(now())
+
+  @@index([criadoEm])
+  @@index([usuarioId, criadoEm])
+}

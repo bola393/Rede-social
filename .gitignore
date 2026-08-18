@@ -1,0 +1,51 @@
+# Dependências
+node_modules/
+.pnpm-store/
+
+# Builds
+dist/
+build/
+*.tsbuildinfo
+apps/web/dev-dist/
+
+# Segredos e configuração local — NUNCA comitar
+.env
+.env.local
+.env.*.local
+
+# Certificados TLS (gerados pelo Tailscale na sua máquina)
+infra/certs/
+*.pem
+*.key
+*.crt
+
+# Backups (podem conter todas as suas mensagens)
+backups/
+*.dump
+
+# Mídias enviadas pelos usuários
+infra/dados/
+uploads/
+
+# Android
+apps/mobile/android/
+!apps/mobile/android/.gitkeep
+*.keystore
+*.jks
+
+# Editores e sistema
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Testes
+coverage/
+test-results/
+playwright-report/
