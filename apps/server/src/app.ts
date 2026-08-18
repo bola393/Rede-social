@@ -2,7 +2,7 @@ import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import type { Config } from './config.js';
 import { rotasDeSaude } from './rotas/saude.js';
 
@@ -13,14 +13,20 @@ import { rotasDeSaude } from './rotas/saude.js';
  * abrir porta nenhuma.
  */
 export async function criarApp(config: Config): Promise<FastifyInstance> {
+  // Nunca registrar cabeçalho de autenticação nem cookie: log vaza fácil, e um
+  // token no log é um token comprometido.
+  const esconder = ['req.headers.authorization', 'req.headers.cookie'];
+
+  // Os dois casos são montados separados, e não com `transport: undefined`:
+  // uma chave presente valendo `undefined` faz o TypeScript escolher a
+  // sobrecarga errada do Fastify, e o erro que aparece fala de HTTP/2 — o que
+  // não ajuda ninguém a entender que o problema era o log.
+  const logger = config.emProducao
+    ? { level: 'info', redact: esconder }
+    : { level: 'debug', transport: { target: 'pino-pretty' }, redact: esconder };
+
   const app = Fastify({
-    logger: {
-      level: config.emProducao ? 'info' : 'debug',
-      transport: config.emProducao ? undefined : { target: 'pino-pretty' },
-      // Nunca registrar cabeçalho de autenticação nem cookie: log vaza fácil,
-      // e um token no log é um token comprometido.
-      redact: ['req.headers.authorization', 'req.headers.cookie'],
-    },
+    logger,
     // O Caddy fica na frente. Sem isto, todo mundo apareceria vindo do IP dele,
     // e o limite de tentativas por IP viraria um limite global.
     trustProxy: true,
@@ -70,7 +76,7 @@ export async function criarApp(config: Config): Promise<FastifyInstance> {
     resposta.code(404).send({ erro: 'Não encontrado.' });
   });
 
-  app.setErrorHandler((erro, requisicao, resposta) => {
+  app.setErrorHandler((erro: FastifyError, requisicao, resposta) => {
     requisicao.log.error({ erro }, 'Falha ao atender a requisição');
 
     // Em produção, a mensagem crua do erro pode revelar caminho de arquivo,

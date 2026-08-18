@@ -17,6 +17,14 @@
 
 generator client {
   provider = "prisma-client-js"
+
+  // Gerado numa pasta nossa, e não dentro de node_modules.
+  //
+  // O pnpm guarda cada pacote num caminho com a versão embutida no nome
+  // (node_modules/.pnpm/@prisma+client@6.19.3_.../), então o cliente gerado
+  // cairia num lugar diferente a cada atualização — impossível de copiar de
+  // forma confiável no Dockerfile.
+  output = "../gerado/prisma"
 }
 
 datasource db {

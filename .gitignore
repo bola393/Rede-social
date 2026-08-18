@@ -49,3 +49,8 @@ pnpm-debug.log*
 coverage/
 test-results/
 playwright-report/
+# Prints gerados pelos testes no celular simulado
+apps/web/retratos/
+
+# Cliente do Prisma, gerado a partir do schema (pnpm db:generate)
+apps/server/gerado/

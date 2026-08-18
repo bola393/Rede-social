@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+
+# Um push novo cancela a checagem anterior do mesmo ramo — não faz sentido
+# esperar o resultado de um commit que já foi substituído.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qualidade:
+    name: Formato, lint, tipos e testes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # O cliente do Prisma é gerado, não versionado. Sem isto, a checagem de
+      # tipos do servidor não encontra os modelos.
+      #
+      # A DATABASE_URL aqui é de mentira e nem chega a ser usada: gerar o
+      # cliente é só ler o schema. O Prisma exige que a variável exista, e não
+      # que ela aponte para algum lugar de verdade.
+      - run: pnpm db:generate
+        env:
+          DATABASE_URL: postgresql://ci@localhost:5432/ci
+
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  celular:
+    name: Interface num celular simulado
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Instalar o Chromium
+        run: pnpm --filter @rede/web exec playwright install --with-deps chromium
+
+      # Roda a interface num Pixel 7 simulado, com câmera e microfone falsos:
+      # confere o diagnóstico, a gravação de áudio em Opus e uma chamada
+      # WebRTC completa.
+      - run: pnpm testar-celular
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: o-que-deu-errado
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          retention-days: 7
+
+  docker:
+    name: As imagens compilam
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Construir sem publicar: garante que o Dockerfile não quebrou, sem
+      # precisar de registro nenhum.
+      - name: Servidor
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/server/Dockerfile
+          target: producao
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Interface
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile.web
+          target: producao
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  configuracao:
+    name: Docker Compose e Prisma válidos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Cria um .env de mentira só para a validação: o compose precisa das
+      # variáveis para conseguir interpolar.
+      - run: pnpm preparar
+
+      - name: Compose principal
+        run: docker compose -f infra/docker-compose.yml --env-file .env config --quiet
+
+      - name: Compose de desenvolvimento
+        run: docker compose -f infra/docker-compose.dev.yml --env-file .env config --quiet
+
+      - name: Schema do banco
+        run: pnpm --filter @rede/server exec prisma validate
+        env:
+          DATABASE_URL: postgresql://ci@localhost:5432/ci

@@ -89,7 +89,9 @@ describe('identidade do aparelho', () => {
   it('recusa um cofre adulterado, mesmo com a senha certa', () => {
     const cofre = trancarIdentidade(gerarIdentidade(), 'senha');
 
-    expect(destrancarIdentidade({ ...cofre, cifrado: adulterar(cofre.cifrado) }, 'senha')).toBeNull();
+    expect(
+      destrancarIdentidade({ ...cofre, cifrado: adulterar(cofre.cifrado) }, 'senha'),
+    ).toBeNull();
   });
 
   it('usa um sal diferente a cada vez, então a mesma senha gera cofres diferentes', () => {
@@ -215,7 +217,9 @@ describe('mensagem', () => {
     const nossa = gerarChaveDeConversa();
     const outra = gerarChaveDeConversa();
 
-    expect(decifrarMensagem(cifrarMensagem('segredo', nossa, contexto()), outra, contexto())).toBeNull();
+    expect(
+      decifrarMensagem(cifrarMensagem('segredo', nossa, contexto()), outra, contexto()),
+    ).toBeNull();
   });
 
   it('não deixa transplantar a mensagem para outra conversa', () => {
@@ -347,7 +351,10 @@ describe('frase de recuperação', () => {
 
   it('não deixa outra frase abrir o mesmo envelope', () => {
     const chave = gerarChaveDeConversa();
-    const guardado = selarParaRecuperacao(chave, chaveMestraDaFrase(gerarFraseDeRecuperacao()).publica);
+    const guardado = selarParaRecuperacao(
+      chave,
+      chaveMestraDaFrase(gerarFraseDeRecuperacao()).publica,
+    );
 
     const intruso = chaveMestraDaFrase(gerarFraseDeRecuperacao());
 

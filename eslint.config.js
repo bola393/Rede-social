@@ -11,7 +11,9 @@ export default tseslint.config(
       '**/coverage/**',
       'apps/mobile/android/**',
       'apps/web/dev-dist/**',
-      '**/generated/**',
+      // Código gerado pelo Prisma a partir do schema. São milhares de linhas
+      // que ninguém escreveu à mão e ninguém vai corrigir.
+      'apps/server/gerado/**',
     ],
   },
   js.configs.recommended,

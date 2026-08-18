@@ -18,7 +18,14 @@ export const TIPOS_DE_CONVERSA = ['DIRETA', 'GRUPO'] as const;
 export type TipoDeConversa = (typeof TIPOS_DE_CONVERSA)[number];
 
 /** O que uma mensagem carrega. */
-export const TIPOS_DE_MENSAGEM = ['TEXTO', 'AUDIO', 'IMAGEM', 'VIDEO', 'ARQUIVO', 'SISTEMA'] as const;
+export const TIPOS_DE_MENSAGEM = [
+  'TEXTO',
+  'AUDIO',
+  'IMAGEM',
+  'VIDEO',
+  'ARQUIVO',
+  'SISTEMA',
+] as const;
 export type TipoDeMensagem = (typeof TIPOS_DE_MENSAGEM)[number];
 
 /** Chamada só de voz, ou com vídeo. */

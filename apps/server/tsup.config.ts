@@ -22,5 +22,9 @@ export default defineConfig({
   sourcemap: true,
   // Só os pacotes do próprio projeto entram no pacote final.
   noExternal: [/^@rede\//],
+  // O cliente do Prisma é importado por caminho relativo, então o empacotador
+  // tentaria embuti-lo. Não pode: ele carrega o motor de consulta (um binário
+  // .node) procurando por caminho de arquivo, e embutido ele não o acha.
+  external: [/gerado\/prisma/],
   skipNodeModulesBundle: true,
 });

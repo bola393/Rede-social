@@ -1,0 +1,155 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  A rede inteira, em quatro peças
+#
+#    postgres  o banco de dados
+#    servidor  a API e o tempo real (chat, sinalização das chamadas)
+#    web       a interface, servida pelo Caddy, que também cuida do HTTPS
+#    coturn    o plano B das chamadas, quando os aparelhos não se acham direto
+#
+#  Para ligar:      docker compose -f infra/docker-compose.yml up -d --build
+#  Para desligar:   docker compose -f infra/docker-compose.yml down
+#
+#  No Windows, o INICIAR.bat e o PARAR.bat fazem isso com um clique duplo.
+#
+#  Este mesmo arquivo roda no seu PC e, mais adiante, na VPS. A única coisa que
+#  muda entre os dois é o `.env`.
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: rede-social
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Acentos e cedilha ordenados como gente espera.
+      POSTGRES_INITDB_ARGS: '--locale=pt_BR.UTF-8 --encoding=UTF8'
+      LANG: pt_BR.utf8
+    volumes:
+      - dados-postgres:/var/lib/postgresql/data
+    # A porta só é publicada em desenvolvimento, pelo arquivo .dev.
+    # Banco exposto na rede é convite para problema.
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  servidor:
+    build:
+      context: ..
+      dockerfile: apps/server/Dockerfile
+      target: producao
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      NOME_DA_REDE: ${NOME_DA_REDE}
+      DOMINIO: ${DOMINIO}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      COOKIE_SECRET: ${COOKIE_SECRET}
+      MEDIA_ENCRYPTION_KEY: ${MEDIA_ENCRYPTION_KEY}
+      TURN_SECRET: ${TURN_SECRET}
+      TURN_REALM: ${TURN_REALM}
+      PORTA_SERVIDOR: ${PORTA_SERVIDOR:-3000}
+      TAMANHO_MAXIMO_UPLOAD_MB: ${TAMANHO_MAXIMO_UPLOAD_MB:-100}
+      DURACAO_MAXIMA_AUDIO_S: ${DURACAO_MAXIMA_AUDIO_S:-300}
+    volumes:
+      # As mídias enviadas. Ficam fora do banco porque arquivo grande dentro de
+      # banco de dados torna backup e restauração muito mais lentos.
+      - dados-midia:/dados/midia
+    # Sem `ports`: quem fala com o servidor é o Caddy, pela rede interna.
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.web
+      target: producao
+    restart: unless-stopped
+    depends_on:
+      - servidor
+    environment:
+      DOMINIO: ${DOMINIO}
+      PORTA_SERVIDOR: ${PORTA_SERVIDOR:-3000}
+      EMAIL_LETSENCRYPT: ${EMAIL_LETSENCRYPT:-}
+      MODO_TLS: ${MODO_TLS:-tailscale}
+    ports:
+      - '${PORTA_HTTP:-80}:80'
+      - '${PORTA_HTTPS:-443}:443'
+    volumes:
+      # Onde o `pnpm cert` deposita o certificado que o Tailscale emitiu.
+      - ./certs:/certs:ro
+      - caddy-dados:/data
+      - caddy-config:/config
+    # O Caddyfile é texto puro, então a escolha do modo de TLS acontece aqui,
+    # antes de ele subir. Uma variável no .env decide, e não dois arquivos de
+    # configuração que vão divergir com o tempo.
+    command:
+      - sh
+      - -c
+      - |
+        if [ "$$MODO_TLS" = "letsencrypt" ]; then
+          # Na VPS o Caddy pede e renova o certificado sozinho. O e-mail é
+          # opcional: serve para a Let's Encrypt avisar antes de algo vencer.
+          if [ -n "$$EMAIL_LETSENCRYPT" ]; then
+            export CADDY_TLS="tls $$EMAIL_LETSENCRYPT"
+          else
+            export CADDY_TLS=""
+          fi
+        elif [ -f /certs/cert.pem ]; then
+          export CADDY_TLS="tls /certs/cert.pem /certs/key.pem"
+        else
+          echo "!! Certificado do Tailscale não encontrado em infra/certs/."
+          echo "!! Rode 'pnpm cert' no PC. Subindo com certificado interno por"
+          echo "!! ora — o navegador vai reclamar, e câmera e microfone podem"
+          echo "!! não funcionar."
+          export CADDY_TLS="tls internal"
+        fi
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    # O Caddy só atende o domínio configurado, então não dá para checar a
+    # saúde dele por `localhost` — e em HTTP ele responde com um redirecionamento
+    # para HTTPS, que o wget trata como falha. O que interessa aqui é bem mais
+    # simples: ele está de pé e falando HTTP? Qualquer status serve de resposta.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "wget -S --spider --max-redirect=0 -O /dev/null http://127.0.0.1:80/ 2>&1 | grep -q 'HTTP/'"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  coturn:
+    image: coturn/coturn:4.6-alpine
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    # `network_mode: host` porque o TURN precisa enxergar os endereços de IP
+    # reais para negociar a conexão. Dentro da rede do Docker ele anunciaria um
+    # IP interno, que ninguém de fora alcança — e a chamada cairia.
+    #
+    # Os segredos vêm por linha de comando: o coturn não expande variáveis no
+    # arquivo de configuração, e escrevê-los lá significaria versionar segredo.
+    #
+    # O arquivo de configuração entra com `-c`. O coturn não aceita a forma
+    # `--config=`, e recusa com uma mensagem que se perde no meio de duzentas
+    # linhas de texto de ajuda.
+    command:
+      - -c
+      - /etc/coturn/turnserver.conf
+      - --static-auth-secret=${TURN_SECRET}
+      - --realm=${TURN_REALM:-rede.local}
+
+volumes:
+  dados-postgres:
+  dados-midia:
+  caddy-dados:
+  caddy-config:

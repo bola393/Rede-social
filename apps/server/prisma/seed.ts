@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../gerado/prisma/index.js';
 
 /**
  * Popula o banco com o mínimo para a rede fazer sentido no primeiro dia.

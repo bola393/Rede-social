@@ -38,7 +38,11 @@ export function cifrarArquivo(bytes: Uint8Array): ArquivoCifrado {
  * Devolve `null` se a chave estiver errada ou se os bytes tiverem sido
  * alterados — inclusive por um download que chegou pela metade.
  */
-export function decifrarArquivo(bytes: Uint8Array, chave: string, nonce: string): Uint8Array | null {
+export function decifrarArquivo(
+  bytes: Uint8Array,
+  chave: string,
+  nonce: string,
+): Uint8Array | null {
   try {
     return lib().crypto_aead_xchacha20poly1305_ietf_decrypt(
       null,

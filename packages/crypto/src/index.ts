@@ -23,7 +23,14 @@
  * 5. A frase de recuperação abre o histórico num aparelho novo.
  */
 
-export { inicializar, iguaisEmTempoConstante, limpar, paraBytes, paraTexto, sortearBytes } from './sodium.js';
+export {
+  inicializar,
+  iguaisEmTempoConstante,
+  limpar,
+  paraBytes,
+  paraTexto,
+  sortearBytes,
+} from './sodium.js';
 
 export {
   assinar,
