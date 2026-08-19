@@ -20,6 +20,13 @@ const chromiumDoAmbiente = process.env.CHROMIUM_PATH;
 export default defineConfig({
   testDir: './testes',
   fullyParallel: true,
+
+  // Teto para a suíte inteira. Sem ele, um servidor que não morre no fim
+  // segura o job até o limite de horas do runner — e o log só fica disponível
+  // quando o job termina, então o travamento vira uma caixa-preta.
+  //
+  // Estourar aqui produz um relatório em minutos, que é o que se quer.
+  globalTimeout: 10 * 60_000,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : [['list']],
@@ -58,7 +65,11 @@ export default defineConfig({
   // consumido, que a chave privada não sai do aparelho.
   webServer: [
     {
-      command: 'pnpm --filter @rede/server dev',
+      // `servir`, e não `dev`: o `dev` usa `tsx watch`, que fica observando
+      // arquivos e nunca termina sozinho. Isso é o certo para quem está
+      // editando código, e o errado aqui — no fim dos testes o Playwright
+      // manda o processo parar, e o observador pode segurar o encerramento.
+      command: 'pnpm --filter @rede/server servir',
       url: 'http://localhost:3000/api/saude',
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

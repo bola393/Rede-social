@@ -15,6 +15,7 @@ jobs:
   qualidade:
     name: Formato, lint, tipos e testes
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     # Os testes de acesso rodam contra um Postgres de verdade, e não contra um
     # banco de mentira. Metade do que pode dar errado ali são as restrições do
@@ -66,6 +67,11 @@ jobs:
   celular:
     name: Interface num celular simulado
     runs-on: ubuntu-latest
+    # Sem um teto, um passo que trava segura o job por horas — e o log do
+    # GitHub só fica disponível quando o job termina, então o travamento vira
+    # uma caixa-preta que não dá para investigar. Melhor falhar em 20 minutos
+    # com o registro em mãos.
+    timeout-minutes: 20
 
     # Estes testes sobem o servidor de verdade e falam com o banco de verdade:
     # é o que separa "a tela monta um JSON" de "a conta é criada, o convite é
@@ -112,8 +118,29 @@ jobs:
       - run: pnpm db:generate
       - run: pnpm --filter @rede/server db:deploy
 
+      # O Chromium tem quase 300 MB e não muda entre execuções. A chave inclui
+      # a versão do Playwright, então uma atualização invalida o cache sozinha.
+      - name: Versão do Playwright
+        id: playwright
+        run: echo "versao=$(node -p "require('./apps/web/node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        id: cache-navegador
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.versao }}
+
+      # As bibliotecas de sistema vêm do apt e não dão para cachear, então
+      # ficam num passo separado com teto próprio: se o espelho do apt estiver
+      # ruim, este passo falha rápido em vez de segurar o job inteiro.
+      - name: Bibliotecas de sistema do navegador
+        timeout-minutes: 8
+        run: pnpm --filter @rede/web exec playwright install-deps chromium
+
       - name: Instalar o Chromium
-        run: pnpm --filter @rede/web exec playwright install --with-deps chromium
+        if: steps.cache-navegador.outputs.cache-hit != 'true'
+        timeout-minutes: 8
+        run: pnpm --filter @rede/web exec playwright install chromium
 
       # Roda a interface num Pixel 7 simulado, com câmera e microfone falsos:
       # confere o diagnóstico, a gravação de áudio em Opus e uma chamada
