@@ -22,8 +22,7 @@ export function rotasDeSaude(app: FastifyInstance, config: Config): void {
 
     // Atrás do Caddy, quem sabe se veio por HTTPS é o cabeçalho que ele repassa.
     const protocolo = requisicao.headers['x-forwarded-proto'] ?? requisicao.protocol;
-    const contextoSeguro =
-      protocolo === 'https' || requisicao.hostname.startsWith('localhost');
+    const contextoSeguro = protocolo === 'https' || requisicao.hostname.startsWith('localhost');
 
     resposta.header('cache-control', 'no-store');
     if (!banco) resposta.code(503);

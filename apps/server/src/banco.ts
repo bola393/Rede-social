@@ -1,4 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+// Gerado por `pnpm db:generate` a partir do prisma/schema.prisma. Não é
+// versionado — por isso o CI roda o db:generate antes de conferir os tipos.
+import { PrismaClient } from '../gerado/prisma/index.js';
 
 /**
  * A conexão com o banco.

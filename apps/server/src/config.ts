@@ -30,6 +30,16 @@ const esquema = z.object({
 
   PORTA_SERVIDOR: z.coerce.number().int().min(1).max(65_535).default(3000),
 
+  /**
+   * Quantas tentativas de entrar ou de se cadastrar cada IP pode fazer a cada
+   * cinco minutos.
+   *
+   * Dez é apertado de propósito: transforma força bruta em algo que leva anos.
+   * Existe como variável porque os testes precisam poder afrouxá-lo — e porque
+   * uma casa com muita gente atrás do mesmo IP pode precisar de folga.
+   */
+  LIMITE_DE_TENTATIVAS: z.coerce.number().int().min(1).max(10_000).default(10),
+
   TAMANHO_MAXIMO_UPLOAD_MB: z.coerce.number().int().min(1).max(2_048).default(100),
   DURACAO_MAXIMA_AUDIO_S: z.coerce.number().int().min(5).max(3_600).default(300),
 });

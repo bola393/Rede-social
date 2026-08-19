@@ -1,0 +1,39 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Só o banco, para desenvolver
+#
+#  Quando você está mexendo no código, subir a rede inteira em container é
+#  desperdício: cada `docker compose build` custa minutos, e o recarregamento
+#  automático não funciona lá dentro.
+#
+#  Então aqui sobe só o Postgres, e servidor e interface rodam direto na
+#  máquina, com recarga instantânea. É o que o `pnpm dev` faz.
+#
+#      docker compose -f infra/docker-compose.dev.yml up -d
+#      pnpm dev
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: rede-social-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rede}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-desenvolvimento}
+      POSTGRES_DB: ${POSTGRES_DB:-rede_social}
+    ports:
+      # Publicado só aqui, e só no localhost: o servidor que roda fora do
+      # container precisa alcançar o banco, mas ninguém na sua rede local
+      # precisa.
+      - '127.0.0.1:${PORTA_POSTGRES:-5432}:5432'
+    volumes:
+      - dados-postgres-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-rede}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  dados-postgres-dev:

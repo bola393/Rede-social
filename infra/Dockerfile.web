@@ -1,0 +1,34 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  A interface, servida pelo Caddy
+#
+#  A interface é compilada aqui dentro e vai junto na imagem. Assim um
+#  `docker compose up --build` sobe a rede inteira sem precisar de Node
+#  instalado na máquina — o que importa bastante em Windows, onde a ideia é
+#  clicar no INICIAR.bat e pronto.
+# ═══════════════════════════════════════════════════════════════════════════
+
+FROM node:22-slim AS build
+ENV PNPM_HOME=/pnpm
+ENV PATH="$PNPM_HOME:$PATH"
+# Build de container não tem terminal interativo, e o pnpm pede confirmação
+# para algumas operações quando acha que há alguém olhando.
+ENV CI=true
+RUN corepack enable
+WORKDIR /app
+
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY apps/web/package.json apps/web/
+COPY packages/shared/package.json packages/shared/
+COPY packages/crypto/package.json packages/crypto/
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile --filter @rede/web...
+
+COPY tsconfig.base.json ./
+COPY packages packages
+COPY apps/web apps/web
+RUN pnpm --filter @rede/web build
+
+
+FROM caddy:2-alpine AS producao
+COPY --from=build /app/apps/web/dist /srv
+COPY infra/Caddyfile /etc/caddy/Caddyfile

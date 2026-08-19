@@ -1,0 +1,217 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+
+# Um push novo cancela a checagem anterior do mesmo ramo — não faz sentido
+# esperar o resultado de um commit que já foi substituído.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qualidade:
+    name: Formato, lint, tipos e testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Os testes de acesso rodam contra um Postgres de verdade, e não contra um
+    # banco de mentira. Metade do que pode dar errado ali são as restrições do
+    # próprio banco — unicidade de e-mail, transações que precisam desfazer
+    # tudo, decremento de convite. Um banco fingido concordaria com qualquer
+    # coisa e não pegaria nada disso.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: rede
+          POSTGRES_PASSWORD: teste
+          POSTGRES_DB: rede_teste
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://rede:teste@localhost:5432/rede_teste
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # O cliente do Prisma é gerado, não versionado. Sem isto, a checagem de
+      # tipos do servidor não encontra os modelos.
+      - run: pnpm db:generate
+
+      # Cria as tabelas antes dos testes que precisam delas.
+      - run: pnpm --filter @rede/server db:deploy
+
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  celular:
+    name: Interface num celular simulado
+    runs-on: ubuntu-latest
+    # Sem um teto, um passo que trava segura o job por horas — e o log do
+    # GitHub só fica disponível quando o job termina, então o travamento vira
+    # uma caixa-preta que não dá para investigar. Melhor falhar em 20 minutos
+    # com o registro em mãos.
+    timeout-minutes: 20
+
+    # Estes testes sobem o servidor de verdade e falam com o banco de verdade:
+    # é o que separa "a tela monta um JSON" de "a conta é criada, o convite é
+    # consumido e a chave privada não sai do aparelho".
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: rede
+          POSTGRES_PASSWORD: teste
+          POSTGRES_DB: rede_teste
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://rede:teste@localhost:5432/rede_teste
+      # O servidor recusa subir com segredo fraco, e é assim que tem que ser.
+      # Estes valem só dentro do runner, que é descartado ao fim do job.
+      JWT_SECRET: ci-so-para-teste-nao-usar-em-lugar-nenhum-1
+      COOKIE_SECRET: ci-so-para-teste-nao-usar-em-lugar-nenhum-2
+      MEDIA_ENCRYPTION_KEY: ci-so-para-teste-nao-usar-em-lugar-nenhum-3
+      # Os testes vêm todos do mesmo IP; o limite de produção barraria a suíte.
+      LIMITE_DE_TENTATIVAS: 9999
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Sem isto o servidor nem carrega: ele importa o cliente do Prisma, que é
+      # gerado e não versionado.
+      - run: pnpm db:generate
+      - run: pnpm --filter @rede/server db:deploy
+
+      # O Chromium tem quase 300 MB e não muda entre execuções. A chave inclui
+      # a versão do Playwright, então uma atualização invalida o cache sozinha.
+      - name: Versão do Playwright
+        id: playwright
+        run: echo "versao=$(node -p "require('./apps/web/node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        id: cache-navegador
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.versao }}
+
+      # As bibliotecas de sistema vêm do apt e não dão para cachear, então
+      # ficam num passo separado com teto próprio: se o espelho do apt estiver
+      # ruim, este passo falha rápido em vez de segurar o job inteiro.
+      - name: Bibliotecas de sistema do navegador
+        timeout-minutes: 8
+        run: pnpm --filter @rede/web exec playwright install-deps chromium
+
+      - name: Instalar o Chromium
+        if: steps.cache-navegador.outputs.cache-hit != 'true'
+        timeout-minutes: 8
+        run: pnpm --filter @rede/web exec playwright install chromium
+
+      # Roda a interface num Pixel 7 simulado, com câmera e microfone falsos:
+      # confere o diagnóstico, a gravação de áudio em Opus e uma chamada
+      # WebRTC completa.
+      - run: pnpm testar-celular
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: o-que-deu-errado
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          retention-days: 7
+
+  docker:
+    name: As imagens compilam
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Construir sem publicar: garante que o Dockerfile não quebrou, sem
+      # precisar de registro nenhum.
+      - name: Servidor
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/server/Dockerfile
+          target: producao
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Interface
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile.web
+          target: producao
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  configuracao:
+    name: Docker Compose e Prisma válidos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Cria um .env de mentira só para a validação: o compose precisa das
+      # variáveis para conseguir interpolar.
+      - run: pnpm preparar
+
+      - name: Compose principal
+        run: docker compose -f infra/docker-compose.yml --env-file .env config --quiet
+
+      - name: Compose de desenvolvimento
+        run: docker compose -f infra/docker-compose.dev.yml --env-file .env config --quiet
+
+      - name: Schema do banco
+        run: pnpm --filter @rede/server exec prisma validate
+        env:
+          DATABASE_URL: postgresql://ci@localhost:5432/ci

@@ -1,6 +1,11 @@
 import { criarApp } from './app.js';
 import { banco } from './banco.js';
 import { carregarConfig } from './config.js';
+import { carregarEnvLocal } from './env-local.js';
+
+// Fora de container, a configuração vem do .env da raiz. Dentro, ela já chegou
+// pelo docker-compose e esta chamada não encontra arquivo nenhum.
+carregarEnvLocal();
 
 const config = carregarConfig();
 const app = await criarApp(config);

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Rede social privada e criptografada, para poucas pessoas de confiança",
+  "type": "module",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=22"
@@ -15,16 +16,29 @@
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "testar-celular": "pnpm --filter @rede/web build && pnpm --filter @rede/web testar-celular",
     "db:generate": "pnpm --filter @rede/server db:generate",
     "db:migrate": "pnpm --filter @rede/server db:migrate",
     "db:seed": "pnpm --filter @rede/server db:seed",
+    "preparar": "tsx scripts/preparar.ts",
     "doutor": "tsx scripts/doutor.ts",
+    "cert": "tsx scripts/cert.ts",
+    "convite": "tsx scripts/convite.ts",
     "backup": "tsx scripts/backup.ts",
-    "restore": "tsx scripts/restore.ts",
-    "cert": "tsx scripts/cert.ts"
+    "restaurar": "tsx scripts/restaurar.ts",
+    "iniciar": "docker compose -f infra/docker-compose.yml --env-file .env up -d --build",
+    "parar": "docker compose -f infra/docker-compose.yml --env-file .env down",
+    "registros": "docker compose -f infra/docker-compose.yml --env-file .env logs -f --tail 100",
+    "banco:subir": "docker compose -f infra/docker-compose.dev.yml --env-file .env up -d",
+    "banco:parar": "docker compose -f infra/docker-compose.dev.yml --env-file .env down"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "@prisma/client", "prisma", "argon2"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@prisma/client",
+      "prisma",
+      "argon2"
+    ]
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

@@ -1,0 +1,78 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Caddy — a porta de entrada da rede
+#
+#  É ele quem cuida do HTTPS. E HTTPS aqui não é capricho: sem ele, o Android
+#  bloqueia câmera e microfone, e nada de áudio, foto ou chamada funciona.
+#
+#  O mesmo arquivo serve os dois mundos:
+#
+#    em casa  → usa o certificado que o Tailscale emitiu (Let's Encrypt de
+#               verdade, via desafio DNS, para o nome .ts.net da máquina)
+#    na VPS   → o Caddy pede e renova o certificado sozinho
+#
+#  Quem decide é a variável MODO_TLS no `.env`; o docker-compose traduz isso
+#  para a linha certa antes de subir.
+# ═══════════════════════════════════════════════════════════════════════════
+
+{
+	# Sem e-mail de administrador aqui: quando é preciso, ele entra pelo
+	# CADDY_TLS. Menos um lugar guardando dado pessoal.
+	admin off
+}
+
+{$DOMINIO:localhost} {
+	{$CADDY_TLS}
+
+	encode zstd gzip
+
+	# ─── API e tempo real ────────────────────────────────────────────────
+	# O WebSocket do chat e da sinalização das chamadas passa por aqui.
+	# O Caddy repassa a atualização de protocolo sozinho, sem configuração.
+	handle /api/* {
+		reverse_proxy servidor:{$PORTA_SERVIDOR:3000}
+	}
+
+	handle /socket.io/* {
+		reverse_proxy servidor:{$PORTA_SERVIDOR:3000}
+	}
+
+	# ─── A interface ─────────────────────────────────────────────────────
+	handle {
+		root * /srv
+
+		# Os arquivos com hash no nome nunca mudam de conteúdo — podem ficar
+		# um ano no cache do celular.
+		@comHash path_regexp \-[A-Za-z0-9_-]{8,}\.(js|css|woff2)$
+		header @comHash Cache-Control "public, max-age=31536000, immutable"
+
+		# O index e o service worker, ao contrário, precisam ser conferidos
+		# sempre — senão uma atualização da rede nunca chegaria a quem já
+		# abriu antes.
+		@semCache path /index.html /sw.js /manifest.webmanifest
+		header @semCache Cache-Control "no-cache"
+
+		# É um aplicativo de página única: qualquer caminho desconhecido
+		# devolve o index, e o roteamento acontece no navegador.
+		try_files {path} /index.html
+		file_server
+	}
+
+	# ─── Cabeçalhos ──────────────────────────────────────────────────────
+	header {
+		# Uma vez que o navegador viu isto, ele se recusa a acessar por HTTP.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		# Rede fechada: nada aqui deve aparecer em buscador nenhum.
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+
+	log {
+		output stderr
+		format console
+		# Endereço de IP é dado pessoal e não ajuda em nada no dia a dia.
+		# Se um dia precisar investigar algo, ligue temporariamente.
+		level WARN
+	}
+}

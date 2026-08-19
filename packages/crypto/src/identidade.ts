@@ -126,11 +126,7 @@ export function conferirAssinatura(
   chavePublica: string,
 ): boolean {
   try {
-    return lib().crypto_sign_verify_detached(
-      paraBytes(assinatura),
-      dados,
-      paraBytes(chavePublica),
-    );
+    return lib().crypto_sign_verify_detached(paraBytes(assinatura), dados, paraBytes(chavePublica));
   } catch {
     return false;
   }
