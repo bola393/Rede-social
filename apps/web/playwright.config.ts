@@ -52,10 +52,23 @@ export default defineConfig({
     },
   ],
 
-  webServer: {
-    command: 'pnpm preview --port 4173 --strictPort',
-    url: 'http://localhost:4173',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
+  // Dois servidores: a interface compilada e a API de verdade, com banco de
+  // verdade atrás. Testar o cadastro contra uma API fingida provaria apenas que
+  // a tela sabe montar um JSON — e não que a conta é criada, que o convite é
+  // consumido, que a chave privada não sai do aparelho.
+  webServer: [
+    {
+      command: 'pnpm --filter @rede/server dev',
+      url: 'http://localhost:3000/api/saude',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      cwd: '../..',
+    },
+    {
+      command: 'pnpm preview --port 4173 --strictPort',
+      url: 'http://localhost:4173',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+  ],
 });

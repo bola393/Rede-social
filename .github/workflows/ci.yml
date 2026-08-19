@@ -15,6 +15,30 @@ jobs:
   qualidade:
     name: Formato, lint, tipos e testes
     runs-on: ubuntu-latest
+
+    # Os testes de acesso rodam contra um Postgres de verdade, e não contra um
+    # banco de mentira. Metade do que pode dar errado ali são as restrições do
+    # próprio banco — unicidade de e-mail, transações que precisam desfazer
+    # tudo, decremento de convite. Um banco fingido concordaria com qualquer
+    # coisa e não pegaria nada disso.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: rede
+          POSTGRES_PASSWORD: teste
+          POSTGRES_DB: rede_teste
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://rede:teste@localhost:5432/rede_teste
+
     steps:
       - uses: actions/checkout@v4
 
@@ -29,13 +53,10 @@ jobs:
 
       # O cliente do Prisma é gerado, não versionado. Sem isto, a checagem de
       # tipos do servidor não encontra os modelos.
-      #
-      # A DATABASE_URL aqui é de mentira e nem chega a ser usada: gerar o
-      # cliente é só ler o schema. O Prisma exige que a variável exista, e não
-      # que ela aponte para algum lugar de verdade.
       - run: pnpm db:generate
-        env:
-          DATABASE_URL: postgresql://ci@localhost:5432/ci
+
+      # Cria as tabelas antes dos testes que precisam delas.
+      - run: pnpm --filter @rede/server db:deploy
 
       - run: pnpm format:check
       - run: pnpm lint

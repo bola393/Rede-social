@@ -47,6 +47,20 @@ complexidade — e vale saber que existe.
 
 ---
 
+## A chave privada nunca sai do aparelho
+
+Ela nasce no seu celular ou navegador, é trancada ali com uma chave derivada da sua senha
+pelo Argon2id, e fica no armazenamento local. **O servidor recebe só a parte pública.**
+
+Havia um caminho mais cômodo: guardar no servidor um cofre da chave, protegido pela senha,
+para você entrar de qualquer navegador. Ele foi recusado. Esse cofre seria material
+atacável em repouso — quem roubasse o banco poderia tentar adivinhar sua senha offline, sem
+pressa e sem limite de tentativas. Do jeito que está, um vazamento do banco não entrega
+nada que dê para atacar.
+
+O preço é que um aparelho novo começa sem histórico, e é para isso que existe a **frase de
+24 palavras**.
+
 ## As senhas
 
 Guardadas com **Argon2id**, que é lento de propósito e consome bastante memória.
@@ -59,6 +73,12 @@ senha produzem hashes completamente diferentes.
 O mínimo é 12 caracteres, sem exigir "uma maiúscula e um símbolo". Regras de
 composição empurram todo mundo para `Senha@123`, que é péssima; comprimento é o
 que de fato encarece um ataque. Uma frase curta funciona muito melhor.
+
+O medidor da tela de cadastro **não usa a nota de 0 a 4** do zxcvbn, e sim o tempo estimado
+de quebra. A diferença é gritante quando se mede: `Senha@123456` tira nota 3 de 4 e cai em
+**três horas**; `girassol na varanda de manha` tira 4 e leva **séculos**. Usar a nota como
+porteiro deixaria passar exatamente as senhas que parecem fortes e não são. O mínimo aceito
+é um ano de ataque offline lento.
 
 ---
 
@@ -136,7 +156,11 @@ confia na pessoa do outro lado, nenhuma tecnologia resolve isso.
 - **Sessões duram pouco**, e o token de renovação é trocado a cada uso — se um
   vazar e for usado, o legítimo é derrubado e você percebe.
 - **Cada aparelho é revogável** individualmente.
-- **PIN ou biometria** para destravar o app no celular.
+- **PIN de 6 dígitos** para destravar o app, com uma ressalva honesta: seis dígitos são um
+  milhão de combinações, o que protege contra quem pega seu celular por um minuto — não
+  contra quem o leva embora e tem tempo. Por isso o PIN é descartado depois de cinco erros,
+  e a partir daí só a senha destrava.
+- **Bloqueio automático** depois de cinco minutos com o app em segundo plano.
 
 ---
 

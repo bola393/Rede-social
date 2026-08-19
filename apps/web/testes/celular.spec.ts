@@ -1,12 +1,19 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * A rede aberta num celular Android simulado.
+ * O diagnóstico, num celular Android simulado.
  *
- * A tela da Fase 0 é um diagnóstico, então o que testamos é justamente isto:
- * ela conta a verdade quando está tudo bem, e conta a verdade — com instrução
- * do que fazer — quando não está.
+ * Ele fica alcançável sem login, pelo "Algo não está funcionando?" da tela de
+ * entrada — porque é exatamente quando não se consegue entrar que ele é
+ * necessário. Estes testes entram por esse caminho, que é o mesmo que alguém
+ * com problema usaria.
  */
+
+/** Vai da tela de entrada até o diagnóstico. */
+async function abrirDiagnostico(pagina: Page): Promise<void> {
+  await pagina.goto('/');
+  await pagina.getByRole('button', { name: /algo não está funcionando/i }).click();
+}
 
 const saudeBoa = {
   ok: true,
@@ -26,7 +33,7 @@ async function fingirServidor(pagina: Page, resposta: unknown, status = 200): Pr
 
 test('cabe na tela do celular, sem rolagem lateral', async ({ page }) => {
   await fingirServidor(page, saudeBoa);
-  await page.goto('/');
+  await abrirDiagnostico(page);
   await expect(page.getByRole('heading', { name: 'Nossa Rede' })).toBeVisible();
 
   const { largura, larguraDaTela } = await page.evaluate(() => ({
@@ -41,9 +48,9 @@ test('cabe na tela do celular, sem rolagem lateral', async ({ page }) => {
 
 test('mostra tudo certo quando o servidor e o banco respondem', async ({ page }) => {
   await fingirServidor(page, saudeBoa);
-  await page.goto('/');
+  await abrirDiagnostico(page);
 
-  await expect(page.getByText('Tudo pronto por aqui.')).toBeVisible();
+  await expect(page.getByText('Está tudo funcionando por aqui.')).toBeVisible();
   await expect(page.getByText('no ar há 1 h')).toBeVisible();
   await expect(page.getByText('Respondendo.')).toBeVisible();
   await expect(page.getByLabel('com problema')).toHaveCount(0);
@@ -51,7 +58,7 @@ test('mostra tudo certo quando o servidor e o banco respondem', async ({ page })
 
 test('explica o que fazer quando o servidor não responde', async ({ page }) => {
   await page.route('**/api/saude', (rota) => rota.abort('connectionrefused'));
-  await page.goto('/');
+  await abrirDiagnostico(page);
 
   await expect(page.getByText('Não consegui falar com o servidor.')).toBeVisible();
   // O diagnóstico só vale se disser o próximo passo.
@@ -61,7 +68,7 @@ test('explica o que fazer quando o servidor não responde', async ({ page }) => 
 
 test('avisa quando o banco caiu mas o servidor está de pé', async ({ page }) => {
   await fingirServidor(page, { ...saudeBoa, ok: false, banco: 'fora' }, 503);
-  await page.goto('/');
+  await abrirDiagnostico(page);
 
   await expect(page.getByText('O servidor está de pé, mas o banco não responde.')).toBeVisible();
   await expect(page.getByText(/docker compose/)).toBeVisible();
@@ -69,7 +76,7 @@ test('avisa quando o banco caiu mas o servidor está de pé', async ({ page }) =
 
 test('a criptografia roda de verdade dentro do navegador', async ({ page }) => {
   await fingirServidor(page, saudeBoa);
-  await page.goto('/');
+  await abrirDiagnostico(page);
 
   // Não é um "ok" decorativo: a tela cifra e decifra uma mensagem de teste com
   // o libsodium. Se o WebAssembly estivesse bloqueado, isto falharia.
@@ -78,7 +85,7 @@ test('a criptografia roda de verdade dentro do navegador', async ({ page }) => {
 
 test('libera câmera e microfone quando a permissão é dada', async ({ page }) => {
   await fingirServidor(page, saudeBoa);
-  await page.goto('/');
+  await abrirDiagnostico(page);
 
   await page.getByRole('button', { name: 'Testar câmera e microfone' }).click();
 
@@ -162,8 +169,8 @@ test('completa uma chamada de vídeo WebRTC', async ({ page }) => {
 
 test('retrato da tela, para acompanhar como está ficando', async ({ page }) => {
   await fingirServidor(page, saudeBoa);
-  await page.goto('/');
+  await abrirDiagnostico(page);
   await expect(page.getByText(/Cifrou e decifrou/)).toBeVisible();
 
-  await page.screenshot({ path: 'retratos/fase-0-celular.png', fullPage: true });
+  await page.screenshot({ path: 'retratos/diagnostico-celular.png', fullPage: true });
 });

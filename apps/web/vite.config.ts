@@ -42,6 +42,23 @@ export default defineConfig({
     }),
   ],
 
+  // O `preview` serve o build pronto. Ele precisa do mesmo desvio de API que o
+  // `dev`, senão os testes de ponta a ponta rodariam contra uma casca sem
+  // servidor — que é justamente o que eles existem para não fazer.
+  preview: {
+    port: 4173,
+    proxy: {
+      '/api': {
+        target: `http://localhost:${process.env.PORTA_SERVIDOR ?? 3000}`,
+        changeOrigin: true,
+      },
+      '/socket.io': {
+        target: `http://localhost:${process.env.PORTA_SERVIDOR ?? 3000}`,
+        ws: true,
+      },
+    },
+  },
+
   server: {
     host: true,
     port: 5173,

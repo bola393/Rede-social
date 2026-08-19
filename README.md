@@ -9,7 +9,7 @@ criptografia **ponta-a-ponta** — nem o servidor consegue lê-las, mesmo sendo 
 
 | Recurso | Estado |
 | --- | --- |
-| Acesso só por convite, com senha pessoal | Fase 1 |
+| Acesso só por convite, com senha pessoal | ✅ pronto |
 | Chat individual e em grupo, criptografado ponta-a-ponta | Fase 2 |
 | Mensagens de áudio | Fase 3 |
 | Fotos e vídeos | Fase 3 |
@@ -18,8 +18,16 @@ criptografia **ponta-a-ponta** — nem o servidor consegue lê-las, mesmo sendo 
 | Chamadas de voz e de vídeo | Fase 5 |
 | App para Android (APK) | Fase 6 |
 
-**Fase atual: 0 — fundação.** A rede sobe, responde por HTTPS e você já consegue abrir no
-celular. Os recursos vêm nas fases seguintes.
+**Fase atual: 1 — acesso e identidade.** Já dá para criar conta por convite, entrar, e
+proteger o app com PIN. As conversas chegam na Fase 2.
+
+O primeiro convite sai pelo terminal, porque ainda não existe ninguém para criá-lo:
+
+```bash
+pnpm convite
+```
+
+Quem se cadastrar com ele administra a rede.
 
 ## Nunca usou Docker? Comece por aqui
 
@@ -39,6 +47,8 @@ Você não precisa de terminal para usar:
 | Ligar a rede | Clique duas vezes em `INICIAR.bat` |
 | Desligar a rede | Clique duas vezes em `PARAR.bat` |
 | Descobrir por que algo não funciona | Clique duas vezes em `DIAGNOSTICO.bat` |
+| Convidar alguém | No app: Ajustes → Convites |
+| Criar o primeiro convite | No terminal: `pnpm convite` |
 
 O diagnóstico confere tudo que costuma dar errado — Docker ligado, Tailscale conectado,
 certificado no prazo, banco respondendo, backup recente — e escreve em português o que houve

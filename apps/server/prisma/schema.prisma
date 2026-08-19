@@ -94,9 +94,18 @@ model Aparelho {
   /// X25519 — recebe segredos selados.
   chavePublicaDeTroca      String
 
-  /// A identidade do aparelho, cifrada com a senha do dono. O servidor guarda
-  /// para permitir entrar de um navegador novo, mas não consegue abrir.
-  cofreCifrado Json?
+  //
+  // Repare no que NÃO existe aqui: nenhuma coluna com a chave privada, nem
+  // mesmo cifrada.
+  //
+  // Guardar um "cofre" protegido pela senha facilitaria entrar de um navegador
+  // novo, e foi por isso que quase entrou. Mas seria material atacável em
+  // repouso: quem roubasse o banco poderia tentar adivinhar a senha offline,
+  // sem pressa e sem limite de tentativas.
+  //
+  // A chave privada nasce no aparelho e morre nele. Quem precisa de acesso
+  // num aparelho novo usa a frase de recuperação de 24 palavras.
+  //
 
   criadoEm     DateTime  @default(now())
   usadoEm      DateTime?
@@ -135,8 +144,12 @@ model Sessao {
 model Convite {
   id        String   @id @default(cuid())
   codigo    String   @unique
-  criadoPor Usuario  @relation("ConvitesCriados", fields: [criadoPorId], references: [id])
-  criadoPorId String
+
+  /// Nulo apenas no primeiro convite de todos, criado pelo `pnpm convite`
+  /// quando ainda não existe nenhuma conta para ser a autora. Depois disso,
+  /// todo convite tem dono.
+  criadoPor Usuario?  @relation("ConvitesCriados", fields: [criadoPorId], references: [id], onDelete: SetNull)
+  criadoPorId String?
 
   usosRestantes Int      @default(1)
   expiraEm      DateTime

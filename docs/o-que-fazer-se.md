@@ -68,11 +68,12 @@ servidor não guarda nenhuma chave capaz de abrir o seu histórico.
 
 O que dá para fazer:
 
-- **Você tem a frase de 24 palavras?** Então dá para recuperar tudo. Use a opção
-  "Entrar com a frase de recuperação" na tela de login.
-- **Você ainda está logado em outro aparelho?** Troque a senha por lá, antes de
-  sair.
-- **Nenhum dos dois?** O administrador da rede pode criar uma conta nova para
+- **Você ainda está destravado em outro aparelho?** É o melhor caso: dá para
+  seguir usando por lá.
+- **Você tem a frase de 24 palavras?** Ela é o que vai reabrir o histórico num
+  aparelho novo. A tela que aceita a frase chega na Fase 2, junto com as
+  conversas — antes disso não há histórico para recuperar. Guarde o papel.
+- **Nenhum dos dois?** Quem administra a rede pode criar uma conta nova para
   você. As conversas antigas ficam perdidas — não há como contornar.
 
 ---
@@ -82,13 +83,15 @@ O que dá para fazer:
 De outro aparelho já conectado, entre em **Ajustes → Meus aparelhos** e revogue
 o que sumiu.
 
-Isso faz duas coisas: derruba a sessão dele e **gira as chaves** de todas as
-conversas de que ele participava. Quem estiver com o aparelho não lê nada do que
-for enviado a partir de agora.
+A sessão dele cai na hora, e ele para de conseguir renovar o acesso.
 
-O que ele já tinha baixado antes continua acessível — não há como apagar
+A partir da Fase 2, revogar também **gira a chave** das conversas de que aquele
+aparelho participava, cortando o acesso ao que vier depois. Por enquanto, o que
+a revogação garante é o corte da sessão.
+
+O que ele já tinha baixado antes continua com ele — não há como apagar
 remotamente algo que já saiu do seu alcance. Se o celular estava sem bloqueio de
-tela, considere trocar a sua senha também.
+tela, troque também a sua senha.
 
 ---
 
@@ -130,6 +133,20 @@ neles.
 
 ---
 
+## …ainda não existe nenhuma conta na rede
+
+O primeiro convite não pode sair de dentro do app: não há ninguém para criá-lo. Ele sai
+pelo terminal, no PC que hospeda a rede:
+
+```bash
+pnpm convite
+```
+
+**Quem se cadastrar com esse código administra a rede** — gera os próximos convites,
+remove membros, e por aí vai. Use você mesmo.
+
+---
+
 ## …quero convidar mais alguém
 
 Em **Ajustes → Convites**, gere um código. Escolha para quantas pessoas ele vale
@@ -146,8 +163,9 @@ Mande o código junto com o endereço da rede. A pessoa se cadastra com ele.
 
 Em **Ajustes → Membros**, remova a pessoa.
 
-Ela perde o acesso na hora, e as conversas de que ela participava **giram para
-uma chave nova**. Ela não lê nada do que for enviado dali em diante.
+Ela perde o acesso na hora: a conta é desativada e todas as sessões dela caem.
+A partir da Fase 2, as conversas de que ela participava também **giram para uma
+chave nova**, para que ela não leia o que vier depois.
 
 O que ela já tinha lido, ela já leu. Isso não tem como desfazer em lugar nenhum
 — nem aqui, nem no WhatsApp.

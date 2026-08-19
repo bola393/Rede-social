@@ -4,6 +4,9 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import type { Config } from './config.js';
+import { registrarAcesso } from './acesso/plugin.js';
+import { rotasDeAcesso } from './rotas/acesso.js';
+import { rotasDeAdministracao } from './rotas/administracao.js';
 import { rotasDeSaude } from './rotas/saude.js';
 
 /**
@@ -70,7 +73,11 @@ export async function criarApp(config: Config): Promise<FastifyInstance> {
     allowList: (requisicao) => requisicao.url === '/api/saude',
   });
 
+  await registrarAcesso(app, config);
+
   rotasDeSaude(app, config);
+  rotasDeAcesso(app, config);
+  rotasDeAdministracao(app);
 
   app.setNotFoundHandler((_requisicao, resposta) => {
     resposta.code(404).send({ erro: 'Não encontrado.' });

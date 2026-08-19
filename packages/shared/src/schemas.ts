@@ -65,7 +65,17 @@ export const identidadePublicaSchema = z.object({
   troca: base64,
 });
 
-/** A identidade trancada com a senha, que o servidor guarda sem conseguir abrir. */
+/**
+ * A identidade trancada com a senha.
+ *
+ * Este formato existe, e é usado — mas **só dentro do aparelho**, no
+ * IndexedDB. Nenhuma rota o aceita nem o devolve: guardá-lo no servidor daria
+ * a quem roubasse o banco algo para atacar offline, sem pressa e sem limite de
+ * tentativas.
+ *
+ * Fica aqui porque servidor e interface precisam concordar sobre o formato no
+ * dia em que a transferência de chaves por QR chegar (Fase 2).
+ */
 export const identidadeTrancadaSchema = z.object({
   versao: z.literal(1),
   cifrado: base64,
@@ -83,7 +93,6 @@ export const cadastroSchema = z.object({
   senha: senhaSchema,
   nomeDoAparelho: z.string().trim().min(1).max(60).default('Meu aparelho'),
   identidade: identidadePublicaSchema,
-  cofre: identidadeTrancadaSchema,
   /** Pública da chave mestre derivada da frase de recuperação. */
   chaveDeRecuperacao: base64,
 });
