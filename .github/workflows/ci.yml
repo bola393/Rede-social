@@ -66,6 +66,35 @@ jobs:
   celular:
     name: Interface num celular simulado
     runs-on: ubuntu-latest
+
+    # Estes testes sobem o servidor de verdade e falam com o banco de verdade:
+    # é o que separa "a tela monta um JSON" de "a conta é criada, o convite é
+    # consumido e a chave privada não sai do aparelho".
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: rede
+          POSTGRES_PASSWORD: teste
+          POSTGRES_DB: rede_teste
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://rede:teste@localhost:5432/rede_teste
+      # O servidor recusa subir com segredo fraco, e é assim que tem que ser.
+      # Estes valem só dentro do runner, que é descartado ao fim do job.
+      JWT_SECRET: ci-so-para-teste-nao-usar-em-lugar-nenhum-1
+      COOKIE_SECRET: ci-so-para-teste-nao-usar-em-lugar-nenhum-2
+      MEDIA_ENCRYPTION_KEY: ci-so-para-teste-nao-usar-em-lugar-nenhum-3
+      # Os testes vêm todos do mesmo IP; o limite de produção barraria a suíte.
+      LIMITE_DE_TENTATIVAS: 9999
+
     steps:
       - uses: actions/checkout@v4
 
@@ -77,6 +106,11 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      # Sem isto o servidor nem carrega: ele importa o cliente do Prisma, que é
+      # gerado e não versionado.
+      - run: pnpm db:generate
+      - run: pnpm --filter @rede/server db:deploy
 
       - name: Instalar o Chromium
         run: pnpm --filter @rede/web exec playwright install --with-deps chromium
